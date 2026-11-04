@@ -1,3 +1,4 @@
+```java
 package com.example.balanceclick;
 
 import java.util.Locale;
@@ -7,236 +8,263 @@ import java.util.regex.Pattern;
 import org.lwjgl.glfw.GLFW;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 
 public class BalanceClickExample implements ClientModInitializer {
+
     private static final String BALANCE_COMMAND = "balance";
     private static final String PAY_TARGET = "Slogc";
-    private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+(?:,\\d{3})*(?:\\.\\d+)?");
-    private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
+
+    private static final long RESERVED_BALANCE = 1000L;
+    private static final long BALANCE_TIMEOUT = 5000L;
+
+    // Extracts numeric sequences, including comma-separated numbers.
+    private static final Pattern NUMBER_PATTERN =
+            Pattern.compile("\\d+(?:,\\d{3})*(?:\\.\\d+)?");
+
+    private static final int RIGHT_SHIFT_KEY =
+            InputUtil.fromTranslationKey(
+                    "key.keyboard.right.shift"
+            ).getCode();
 
     private volatile boolean lastShiftPressed = false;
-    private volatile String lastKnownBalance = null;
+    private volatile boolean waitingForBalance = false;
+
+    private volatile long balanceRequestTime = 0L;
 
     @Override
     public void onInitializeClient() {
+
+        // Listen for normal server/system messages.
+        ClientReceiveMessageEvents.GAME.register(
+                (message, overlay) -> handleIncomingBalance(message)
+        );
+
+        // Listen for player chat messages too.
+        ClientReceiveMessageEvents.CHAT.register(
+                (message, signedMessage, sender, params, timestamp) ->
+                        handleIncomingBalance(message)
+        );
+
         startRightShiftListener();
+
     }
 
-    public void requestBalanceNow() {
-        triggerBalanceCommand();
-    }
-
+    // Extract the largest number from a message.
     public static String parseBalanceResponse(String rawResponse) {
-        if (rawResponse == null || rawResponse.trim().isEmpty()) {
+
+        if (rawResponse == null || rawResponse.isBlank()) {
             return "0";
         }
 
-        String normalized = rawResponse.toLowerCase(Locale.ROOT);
-        Matcher numberMatcher = NUMBER_PATTERN.matcher(normalized);
+        Matcher matcher = NUMBER_PATTERN.matcher(rawResponse);
 
         long bestNumber = -1L;
-        while (numberMatcher.find()) {
-            String candidate = numberMatcher.group().replace(",", "");
+
+        while (matcher.find()) {
+
+            String candidate = matcher.group().replace(",", "");
+
             try {
+
                 long value = Long.parseLong(candidate);
+
                 if (value > bestNumber) {
                     bestNumber = value;
                 }
+
             } catch (NumberFormatException ignored) {
             }
         }
 
-        if (bestNumber < 0L) {
-            return "0";
-        }
-
-        return Long.toString(bestNumber);
+        return bestNumber < 0L
+                ? "0"
+                : Long.toString(bestNumber);
     }
 
-    public void handleBalanceResponse(String rawResponse) {
-        String parsedBalance = parseBalanceResponse(rawResponse);
-        lastKnownBalance = parsedBalance;
+    // Called whenever a chat message arrives.
+    private void handleIncomingBalance(Text message) {
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.getNetworkHandler() == null) {
+        if (!waitingForBalance || message == null) {
             return;
         }
 
-        client.player.sendMessage(Text.of("[BalanceClick] Parsed balance: $" + parsedBalance), false);
-    }
+        String rawMessage = message.getString();
 
-    private String resolvePaymentAmount() {
-        String candidate = lastKnownBalance;
-        if (candidate == null || candidate.isBlank() || "0".equals(candidate)) {
-            return "-1000";
+        String normalized = rawMessage.toLowerCase(Locale.ROOT);
+
+        // Only process the actual balance response.
+        if (!normalized.contains("your balance is")) {
+            return;
         }
 
-        try {
-            long balance = Long.parseLong(candidate);
-            long payAmount = Math.max(0L, balance - 1000L);
-            return Long.toString(payAmount);
-        } catch (NumberFormatException e) {
-            return "-1000";
-        }
-    }
+        String parsedBalance = parseBalanceResponse(rawMessage);
 
-    private String readLatestChatBalanceText() {
+        if ("0".equals(parsedBalance)) {
+            return;
+        }
+
+        waitingForBalance = false;
+
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.inGameHud == null) {
-            return null;
+
+        if (client == null || client.player == null
+                || client.getNetworkHandler() == null) {
+            return;
         }
 
         try {
-            Object chatHud = client.inGameHud.getClass().getMethod("getChatHud").invoke(client.inGameHud);
-            if (chatHud == null) {
-                return null;
+
+            long balance = Long.parseLong(parsedBalance);
+
+            if (balance <= RESERVED_BALANCE) {
+
+                client.player.sendMessage(
+                        Text.of(
+                                "[BalanceClick] Insufficient balance. Current: $"
+                                        + parsedBalance
+                        ),
+                        false
+                );
+
+                return;
             }
 
-            Object visibleMessages = null;
-            for (String methodName : java.util.List.of("getVisibleMessages", "getMessageHistory")) {
-                try {
-                    visibleMessages = chatHud.getClass().getMethod(methodName).invoke(chatHud);
-                    if (visibleMessages != null) {
-                        break;
-                    }
-                } catch (Exception ignored) {
-                }
-            }
+            long paymentAmount = balance - RESERVED_BALANCE;
 
-            if (!(visibleMessages instanceof java.util.List<?> list) || list.isEmpty()) {
-                return null;
-            }
+            String paymentCommand =
+                    "pay " + PAY_TARGET + " " + paymentAmount;
 
-            Object latest = list.get(list.size() - 1);
-            if (latest == null) {
-                return null;
-            }
+            client.player.sendMessage(
+                    Text.of(
+                            "[BalanceClick] Balance: $" + parsedBalance
+                                    + " | Payment: $" + paymentAmount
+                    ),
+                    false
+            );
 
-            for (String methodName : java.util.List.of("content", "getContent", "toString")) {
-                try {
-                    Object content = latest.getClass().getMethod(methodName).invoke(latest);
-                    if (content != null) {
-                        String output = String.valueOf(content);
-                        if (output != null && !output.isBlank()) {
-                            return output;
-                        }
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-        } catch (Exception ignored) {
+            // Execute on Minecraft's client thread.
+            client.getNetworkHandler().sendChatCommand(paymentCommand);
+
+        } catch (NumberFormatException ignored) {
+
+            client.player.sendMessage(
+                    Text.of("[BalanceClick] Invalid balance number."),
+                    false
+            );
+
+        }
+    }
+
+    // Trigger balance request.
+    private void triggerBalanceCommand() {
+
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        if (client == null || client.player == null
+                || client.getNetworkHandler() == null) {
+            return;
         }
 
-        return null;
+        if (waitingForBalance) {
+            return;
+        }
+
+        waitingForBalance = true;
+        balanceRequestTime = System.currentTimeMillis();
+
+        client.player.sendMessage(
+                Text.of("[BalanceClick] Requesting balance..."),
+                false
+        );
+
+        client.getNetworkHandler().sendChatCommand(BALANCE_COMMAND);
+
     }
 
-    private void waitForBalanceAndPay() {
-        Thread thread = new Thread(() -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            long deadline = System.currentTimeMillis() + 5000L;
-
-            while (System.currentTimeMillis() < deadline) {
-                final String[] latestChatText = new String[1];
-                if (client != null) {
-                    client.execute(() -> latestChatText[0] = readLatestChatBalanceText());
-                }
-
-                if (latestChatText[0] != null) {
-                    String parsed = parseBalanceResponse(latestChatText[0]);
-                    if (!"0".equals(parsed)) {
-                        lastKnownBalance = parsed;
-                        String paymentAmount = resolvePaymentAmount();
-                        String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
-                        if (client != null && client.player != null && client.getNetworkHandler() != null) {
-                            client.player.sendMessage(Text.of("[BalanceClick] Found balance: $" + paymentAmount + ". Sending " + paymentCommand), false);
-                            client.execute(() -> client.player.networkHandler.sendChatCommand(paymentCommand.substring(1)));
-                        }
-                        return;
-                    }
-                }
-
-                try {
-                    Thread.sleep(100L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-
-            String paymentCommand = "/pay " + PAY_TARGET + " -1000";
-            if (client != null && client.player != null && client.getNetworkHandler() != null) {
-                client.player.sendMessage(Text.of("[BalanceClick] Balance read timed out, using safe fallback: " + paymentCommand), false);
-                client.execute(() -> client.player.networkHandler.sendChatCommand(paymentCommand.substring(1)));
-            }
-        }, "balanceclick-balance-waiter");
-
-        thread.setDaemon(true);
-        thread.start();
-    }
-
-    private void sendChatCommandWithDelay(String command, long delayMillis) {
-        Thread thread = new Thread(() -> {
-            try {
-                Thread.sleep(delayMillis);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client == null || client.player == null || client.getNetworkHandler() == null) {
-                return;
-            }
-
-            client.execute(() -> client.player.networkHandler.sendChatCommand(command));
-        }, "balanceclick-chat-delay");
-
-        thread.setDaemon(true);
-        thread.start();
-    }
-
+    // Listen for Right Shift.
     private void startRightShiftListener() {
+
         Thread thread = new Thread(() -> {
+
             while (!Thread.currentThread().isInterrupted()) {
+
                 MinecraftClient client = MinecraftClient.getInstance();
+
                 if (client != null && client.getWindow() != null) {
-                    long windowHandle = client.getWindow().getHandle();
-                    boolean isShiftPressed = GLFW.glfwGetKey(windowHandle, RIGHT_SHIFT_KEY) == GLFW.GLFW_PRESS;
+
+                    long windowHandle =
+                            client.getWindow().getHandle();
+
+                    boolean isShiftPressed =
+                            GLFW.glfwGetKey(
+                                    windowHandle,
+                                    RIGHT_SHIFT_KEY
+                            ) == GLFW.GLFW_PRESS;
 
                     if (isShiftPressed && !lastShiftPressed) {
+
                         client.execute(this::triggerBalanceCommand);
+
                     }
 
                     lastShiftPressed = isShiftPressed;
+
                 } else {
+
                     lastShiftPressed = false;
+
+                }
+
+                // Timeout protection.
+                if (waitingForBalance
+                        && System.currentTimeMillis() - balanceRequestTime
+                        > BALANCE_TIMEOUT) {
+
+                    waitingForBalance = false;
+
+                    if (client != null) {
+
+                        client.execute(() -> {
+
+                            if (client.player != null) {
+
+                                client.player.sendMessage(
+                                        Text.of(
+                                                "[BalanceClick] Balance request timed out."
+                                        ),
+                                        false
+                                );
+
+                            }
+
+                        });
+
+                    }
                 }
 
                 try {
+
                     Thread.sleep(50L);
+
                 } catch (InterruptedException e) {
+
                     Thread.currentThread().interrupt();
                     return;
+
                 }
+
             }
+
         }, "balanceclick-right-shift");
 
         thread.setDaemon(true);
         thread.start();
+
     }
 
-    private void triggerBalanceCommand() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.getNetworkHandler() == null) {
-            return;
-        }
-
-        lastKnownBalance = null;
-        client.player.sendMessage(Text.of("[BalanceClick] Waiting for balance input..."), false);
-        sendChatCommandWithDelay(BALANCE_COMMAND, 250L);
-        waitForBalanceAndPay();
-    }
 }
+```
