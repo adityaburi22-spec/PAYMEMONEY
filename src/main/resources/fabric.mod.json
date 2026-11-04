@@ -3,7 +3,7 @@
   "id": "balanceclickexample",
   "version": "${version}",
   "name": "Balance Click Example",
-  "description": "A minimal Fabric client mod that reads a balance value and triggers a command template on right click.",
+  "description": "A Fabric client mod that sends the server /balance command as soon as a player/world is ready.",
   "authors": ["Example"],
   "license": "MIT",
   "environment": "client",
