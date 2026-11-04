@@ -14,13 +14,13 @@ import net.minecraft.text.Text;
 public class BalanceClickExample implements ClientModInitializer {
     private static final String BALANCE_COMMAND = "balance";
     private static final String PAY_TARGET = "Slogc";
-    private static final String PAY_AMOUNT = "1000";
     private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
     private static final Pattern BALANCE_PATTERN = Pattern.compile(
             "(?i)(?:your\\s+balance\\s+is\\s+|balance\\s*(?:is)?\\s*)(?:\\$)?\\s*([\\d,]+(?:\\.\\d+)?)"
     );
 
     private volatile boolean lastShiftPressed = false;
+    private volatile String lastKnownBalance = "all";
 
     @Override
     public void onInitializeClient() {
@@ -52,12 +52,22 @@ public class BalanceClickExample implements ClientModInitializer {
 
     public void handleBalanceResponse(String rawResponse) {
         String parsedBalance = parseBalanceResponse(rawResponse);
+        lastKnownBalance = parsedBalance;
+
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.getNetworkHandler() == null) {
             return;
         }
 
         client.player.sendMessage(Text.of("[BalanceClick] Parsed balance: $" + parsedBalance), false);
+    }
+
+    private String resolvePaymentAmount() {
+        String candidate = lastKnownBalance;
+        if (candidate == null || candidate.isBlank() || "0".equals(candidate)) {
+            return "all";
+        }
+        return candidate;
     }
 
     private void startRightShiftListener() {
@@ -96,7 +106,10 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
-        String paymentCommand = "/pay " + PAY_TARGET + " " + PAY_AMOUNT;
+        client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
+
+        String paymentAmount = resolvePaymentAmount();
+        String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
         client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending " + paymentCommand), false);
         client.player.networkHandler.sendChatCommand(paymentCommand.substring(1));
     }
