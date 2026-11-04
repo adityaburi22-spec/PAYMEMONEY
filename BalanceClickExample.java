@@ -57,24 +57,34 @@ public class BalanceClickExample implements ClientModInitializer {
 
     private void startLoginAwareBalanceLoop() {
         Thread thread = new Thread(() -> {
-            long deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS;
-
-            while (!balanceRequested && System.currentTimeMillis() < deadline) {
+            while (!Thread.currentThread().isInterrupted()) {
                 MinecraftClient client = MinecraftClient.getInstance();
-                if (client != null && client.player != null && client.getNetworkHandler() != null) {
-                    triggerBalanceCommand();
-                    return;
+                if (client == null) {
+                    try {
+                        Thread.sleep(500L);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    continue;
+                }
+
+                if (client.getNetworkHandler() != null) {
+                    if (!balanceRequested) {
+                        balanceRequested = true;
+                        client.execute(() -> triggerBalanceCommand());
+                    }
+                } else {
+                    balanceRequested = false;
                 }
 
                 try {
-                    Thread.sleep(500L);
+                    Thread.sleep(250L);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
             }
-
-            System.out.println("[BalanceClickExample] Waiting for server login so /balance can be sent.");
         }, "balanceclick-login-watcher");
 
         thread.setDaemon(true);
@@ -82,18 +92,12 @@ public class BalanceClickExample implements ClientModInitializer {
     }
 
     private void triggerBalanceCommand() {
-        if (balanceRequested) {
-            return;
-        }
-
-        balanceRequested = true;
-
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.getNetworkHandler() == null) {
             return;
         }
 
-        client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
-        client.player.sendMessage(Text.of("[BalanceClick] Sent /balance after login."), false);
+        client.player.sendMessage(Text.of("[BalanceClick] Sending /balance after login."), false);
+        client.player.networkHandler.sendChatMessage("/" + BALANCE_COMMAND);
     }
 }
