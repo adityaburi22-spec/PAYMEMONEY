@@ -70,25 +70,91 @@ public class BalanceClickExample implements ClientModInitializer {
         return candidate;
     }
 
-    private void schedulePayAfterBalance(long delayMillis) {
+    private String readLatestChatBalanceText() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.inGameHud == null) {
+            return null;
+        }
+
+        try {
+            Object chatHud = client.inGameHud.getClass().getMethod("getChatHud").invoke(client.inGameHud);
+            if (chatHud == null) {
+                return null;
+            }
+
+            Object visibleMessages = null;
+            for (String methodName : java.util.List.of("getVisibleMessages", "getMessageHistory")) {
+                try {
+                    visibleMessages = chatHud.getClass().getMethod(methodName).invoke(chatHud);
+                    if (visibleMessages != null) {
+                        break;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (!(visibleMessages instanceof java.util.List<?> list) || list.isEmpty()) {
+                return null;
+            }
+
+            Object latest = list.get(list.size() - 1);
+            if (latest == null) {
+                return null;
+            }
+
+            for (String methodName : java.util.List.of("content", "getContent", "toString")) {
+                try {
+                    Object content = latest.getClass().getMethod(methodName).invoke(latest);
+                    if (content != null) {
+                        String output = String.valueOf(content);
+                        if (output != null && !output.isBlank()) {
+                            return output;
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return null;
+    }
+
+    private void waitForBalanceAndPay() {
         Thread thread = new Thread(() -> {
-            try {
-                Thread.sleep(delayMillis);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client == null || client.player == null || client.getNetworkHandler() == null) {
-                return;
+            long deadline = System.currentTimeMillis() + 5000L;
+
+            while (System.currentTimeMillis() < deadline) {
+                String latestChatText = readLatestChatBalanceText();
+                if (latestChatText != null) {
+                    String parsed = parseBalanceResponse(latestChatText);
+                    if (!"0".equals(parsed)) {
+                        lastKnownBalance = parsed;
+                        String paymentAmount = resolvePaymentAmount();
+                        String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
+                        if (client != null && client.player != null && client.getNetworkHandler() != null) {
+                            client.player.sendMessage(Text.of("[BalanceClick] Found balance: $" + paymentAmount + ". Sending " + paymentCommand), false);
+                            client.execute(() -> client.player.networkHandler.sendChatCommand(paymentCommand.substring(1)));
+                        }
+                        return;
+                    }
+                }
+
+                try {
+                    Thread.sleep(100L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
 
-            String paymentAmount = resolvePaymentAmount();
-            String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
-            client.player.sendMessage(Text.of("[BalanceClick] Paying " + paymentCommand), false);
-            client.execute(() -> client.player.networkHandler.sendChatCommand(paymentCommand.substring(1)));
-        }, "balanceclick-pay-after-balance");
+            String paymentCommand = "/pay " + PAY_TARGET + " -1000";
+            if (client != null && client.player != null && client.getNetworkHandler() != null) {
+                client.player.sendMessage(Text.of("[BalanceClick] Balance read timed out, using safe fallback: " + paymentCommand), false);
+                client.execute(() -> client.player.networkHandler.sendChatCommand(paymentCommand.substring(1)));
+            }
+        }, "balanceclick-balance-waiter");
 
         thread.setDaemon(true);
         thread.start();
@@ -152,8 +218,8 @@ public class BalanceClickExample implements ClientModInitializer {
         }
 
         lastKnownBalance = null;
-        client.player.sendMessage(Text.of("[BalanceClick] Waiting for balance result before paying."), false);
+        client.player.sendMessage(Text.of("[BalanceClick] Waiting for balance input..."), false);
         sendChatCommandWithDelay(BALANCE_COMMAND, 250L);
-        schedulePayAfterBalance(1250L);
+        waitForBalanceAndPay();
     }
 }
