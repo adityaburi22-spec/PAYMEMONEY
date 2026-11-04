@@ -1,4 +1,4 @@
-```java
+
 package com.example.balanceclick;
 
 import java.util.Locale;
@@ -267,4 +267,3 @@ public class BalanceClickExample implements ClientModInitializer {
     }
 
 }
-```
