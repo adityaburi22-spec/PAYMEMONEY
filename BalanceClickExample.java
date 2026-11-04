@@ -139,9 +139,13 @@ public class BalanceClickExample implements ClientModInitializer {
             long deadline = System.currentTimeMillis() + 5000L;
 
             while (System.currentTimeMillis() < deadline) {
-                String latestChatText = readLatestChatBalanceText();
-                if (latestChatText != null) {
-                    String parsed = parseBalanceResponse(latestChatText);
+                final String[] latestChatText = new String[1];
+                if (client != null) {
+                    client.execute(() -> latestChatText[0] = readLatestChatBalanceText());
+                }
+
+                if (latestChatText[0] != null) {
+                    String parsed = parseBalanceResponse(latestChatText[0]);
                     if (!"0".equals(parsed)) {
                         lastKnownBalance = parsed;
                         String paymentAmount = resolvePaymentAmount();
