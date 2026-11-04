@@ -67,7 +67,7 @@ public class BalanceClickExample implements ClientModInitializer {
                     boolean isShiftPressed = GLFW.glfwGetKey(windowHandle, RIGHT_SHIFT_KEY) == GLFW.GLFW_PRESS;
 
                     if (isShiftPressed && !lastShiftPressed) {
-                        triggerBalanceCommand();
+                        client.execute(this::triggerBalanceCommand);
                     }
 
                     lastShiftPressed = isShiftPressed;
