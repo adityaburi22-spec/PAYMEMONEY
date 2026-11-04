@@ -19,7 +19,7 @@ public class BalanceClickExample implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        startBalanceRequestLoop();
+        startLoginAwareBalanceLoop();
     }
 
     public void requestBalanceNow() {
@@ -55,32 +55,27 @@ public class BalanceClickExample implements ClientModInitializer {
         client.player.sendMessage(Text.of("[BalanceClick] Parsed balance: $" + parsedBalance), false);
     }
 
-    private void startBalanceRequestLoop() {
+    private void startLoginAwareBalanceLoop() {
         Thread thread = new Thread(() -> {
             long deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS;
 
             while (!balanceRequested && System.currentTimeMillis() < deadline) {
                 MinecraftClient client = MinecraftClient.getInstance();
-                if (client != null && client.player != null && client.player.networkHandler != null) {
+                if (client != null && client.player != null && client.getNetworkHandler() != null) {
                     triggerBalanceCommand();
                     return;
                 }
 
                 try {
-                    Thread.sleep(250L);
+                    Thread.sleep(500L);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
             }
 
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null && client.player != null && client.player.networkHandler != null) {
-                triggerBalanceCommand();
-            } else {
-                System.out.println("[BalanceClickExample] Mod loaded. Waiting for a player/world so /balance can be sent.");
-            }
-        }, "balanceclick-requester");
+            System.out.println("[BalanceClickExample] Waiting for server login so /balance can be sent.");
+        }, "balanceclick-login-watcher");
 
         thread.setDaemon(true);
         thread.start();
@@ -94,14 +89,11 @@ public class BalanceClickExample implements ClientModInitializer {
         balanceRequested = true;
 
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.player.networkHandler == null) {
+        if (client == null || client.player == null || client.getNetworkHandler() == null) {
             return;
         }
 
         client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
-        client.player.sendMessage(Text.of("[BalanceClick] Sent /balance to request the current balance."), false);
-
-        String demoResponse = "your balance is $123,456,789";
-        handleBalanceResponse(demoResponse);
+        client.player.sendMessage(Text.of("[BalanceClick] Sent /balance after login."), false);
     }
 }
