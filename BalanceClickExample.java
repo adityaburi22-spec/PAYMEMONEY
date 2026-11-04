@@ -14,10 +14,8 @@ import net.minecraft.text.Text;
 public class BalanceClickExample implements ClientModInitializer {
     private static final String BALANCE_COMMAND = "balance";
     private static final String PAY_TARGET = "Slogc";
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+(?:,\\d{3})*(?:\\.\\d+)?");
     private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
-    private static final Pattern BALANCE_PATTERN = Pattern.compile(
-            "(?i)(?:your\\s+balance\\s+is\\s+|balance\\s*(?:is)?\\s*)(?:\\$)?\\s*([\\d,]+(?:\\.\\d+)?)"
-    );
 
     private volatile boolean lastShiftPressed = false;
     private volatile String lastKnownBalance = null;
@@ -37,17 +35,25 @@ public class BalanceClickExample implements ClientModInitializer {
         }
 
         String normalized = rawResponse.toLowerCase(Locale.ROOT);
-        Matcher matcher = BALANCE_PATTERN.matcher(normalized);
-        if (matcher.find()) {
-            return matcher.group(1).replace(",", "");
+        Matcher numberMatcher = NUMBER_PATTERN.matcher(normalized);
+
+        long bestNumber = -1L;
+        while (numberMatcher.find()) {
+            String candidate = numberMatcher.group().replace(",", "");
+            try {
+                long value = Long.parseLong(candidate);
+                if (value > bestNumber) {
+                    bestNumber = value;
+                }
+            } catch (NumberFormatException ignored) {
+            }
         }
 
-        String digitsOnly = normalized.replaceAll("[^0-9.]", "");
-        if (digitsOnly.isEmpty()) {
+        if (bestNumber < 0L) {
             return "0";
         }
 
-        return digitsOnly;
+        return Long.toString(bestNumber);
     }
 
     public void handleBalanceResponse(String rawResponse) {
