@@ -96,8 +96,8 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
-        String paymentCommand = "pay " + PAY_TARGET + " " + PAY_AMOUNT;
-        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending " + paymentCommand + "."), false);
-        client.player.networkHandler.sendChatCommand(paymentCommand);
+        String paymentCommand = "/pay " + PAY_TARGET + " " + PAY_AMOUNT;
+        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending " + paymentCommand), false);
+        client.player.networkHandler.sendChatCommand(paymentCommand.substring(1));
     }
 }
