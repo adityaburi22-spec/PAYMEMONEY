@@ -20,7 +20,7 @@ public class BalanceClickExample implements ClientModInitializer {
     );
 
     private volatile boolean lastShiftPressed = false;
-    private volatile String lastKnownBalance = "all";
+    private volatile String lastKnownBalance = "-1000";
 
     @Override
     public void onInitializeClient() {
@@ -65,7 +65,7 @@ public class BalanceClickExample implements ClientModInitializer {
     private String resolvePaymentAmount() {
         String candidate = lastKnownBalance;
         if (candidate == null || candidate.isBlank() || "0".equals(candidate)) {
-            return "all";
+            return "-1000";
         }
         return candidate;
     }
