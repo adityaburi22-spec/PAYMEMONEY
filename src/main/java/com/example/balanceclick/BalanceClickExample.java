@@ -73,7 +73,14 @@ public class BalanceClickExample implements ClientModInitializer {
         if (candidate == null || candidate.isBlank() || "0".equals(candidate)) {
             return "-1000";
         }
-        return candidate;
+
+        try {
+            long balance = Long.parseLong(candidate);
+            long payAmount = Math.max(0L, balance - 1000L);
+            return Long.toString(payAmount);
+        } catch (NumberFormatException e) {
+            return "-1000";
+        }
     }
 
     private String readLatestChatBalanceText() {
