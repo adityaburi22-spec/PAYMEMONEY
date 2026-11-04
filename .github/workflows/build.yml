@@ -27,4 +27,6 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Fabric mod
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx2g -Xms512m -Dfile.encoding=UTF-8
         run: ./gradlew build --no-daemon
