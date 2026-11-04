@@ -70,6 +70,27 @@ public class BalanceClickExample implements ClientModInitializer {
         return candidate;
     }
 
+    private void sendChatCommandWithDelay(String command, long delayMillis) {
+        Thread thread = new Thread(() -> {
+            try {
+                Thread.sleep(delayMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.player == null || client.getNetworkHandler() == null) {
+                return;
+            }
+
+            client.execute(() -> client.player.networkHandler.sendChatCommand(command));
+        }, "balanceclick-chat-delay");
+
+        thread.setDaemon(true);
+        thread.start();
+    }
+
     private void startRightShiftListener() {
         Thread thread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
@@ -106,11 +127,12 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
-        client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
+        client.player.sendMessage(Text.of("[BalanceClick] Waiting 250 ms before sending commands."), false);
+        sendChatCommandWithDelay(BALANCE_COMMAND, 250L);
 
         String paymentAmount = resolvePaymentAmount();
         String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
         client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending " + paymentCommand), false);
-        client.player.networkHandler.sendChatCommand(paymentCommand.substring(1));
+        sendChatCommandWithDelay(paymentCommand.substring(1), 500L);
     }
 }
