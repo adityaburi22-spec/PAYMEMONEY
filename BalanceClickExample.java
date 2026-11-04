@@ -4,22 +4,25 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.lwjgl.glfw.GLFW;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 
 public class BalanceClickExample implements ClientModInitializer {
     private static final String BALANCE_COMMAND = "balance";
-    private static final long WAIT_TIMEOUT_MS = 60000L;
+    private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
     private static final Pattern BALANCE_PATTERN = Pattern.compile(
             "(?i)(?:your\\s+balance\\s+is\\s+|balance\\s*(?:is)?\\s*)(?:\\$)?\\s*([\\d,]+(?:\\.\\d+)?)"
     );
 
-    private volatile boolean balanceRequested = false;
+    private volatile boolean lastShiftPressed = false;
 
     @Override
     public void onInitializeClient() {
-        startLoginAwareBalanceLoop();
+        startRightShiftListener();
     }
 
     public void requestBalanceNow() {
@@ -55,37 +58,31 @@ public class BalanceClickExample implements ClientModInitializer {
         client.player.sendMessage(Text.of("[BalanceClick] Parsed balance: $" + parsedBalance), false);
     }
 
-    private void startLoginAwareBalanceLoop() {
+    private void startRightShiftListener() {
         Thread thread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 MinecraftClient client = MinecraftClient.getInstance();
-                if (client == null) {
-                    try {
-                        Thread.sleep(500L);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
-                    continue;
-                }
+                if (client != null && client.getWindow() != null) {
+                    long windowHandle = client.getWindow().getHandle();
+                    boolean isShiftPressed = GLFW.glfwGetKey(windowHandle, RIGHT_SHIFT_KEY) == GLFW.GLFW_PRESS;
 
-                if (client.getNetworkHandler() != null) {
-                    if (!balanceRequested) {
-                        balanceRequested = true;
-                        client.execute(() -> triggerBalanceCommand());
+                    if (isShiftPressed && !lastShiftPressed) {
+                        triggerBalanceCommand();
                     }
+
+                    lastShiftPressed = isShiftPressed;
                 } else {
-                    balanceRequested = false;
+                    lastShiftPressed = false;
                 }
 
                 try {
-                    Thread.sleep(250L);
+                    Thread.sleep(50L);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
             }
-        }, "balanceclick-login-watcher");
+        }, "balanceclick-right-shift");
 
         thread.setDaemon(true);
         thread.start();
@@ -97,7 +94,7 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
-        client.player.sendMessage(Text.of("[BalanceClick] Sending /balance after login."), false);
-        client.player.networkHandler.sendChatMessage("/" + BALANCE_COMMAND);
+        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending /balance."), false);
+        client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
     }
 }

@@ -4,22 +4,25 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.lwjgl.glfw.GLFW;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 
 public class BalanceClickExample implements ClientModInitializer {
     private static final String BALANCE_COMMAND = "balance";
-    private static final long WAIT_TIMEOUT_MS = 60000L;
+    private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
     private static final Pattern BALANCE_PATTERN = Pattern.compile(
             "(?i)(?:your\\s+balance\\s+is\\s+|balance\\s*(?:is)?\\s*)(?:\\$)?\\s*([\\d,]+(?:\\.\\d+)?)"
     );
 
-    private volatile boolean balanceRequested = false;
+    private volatile boolean lastShiftPressed = false;
 
     @Override
     public void onInitializeClient() {
-        startBalanceRequestLoop();
+        startRightShiftListener();
     }
 
     public void requestBalanceNow() {
@@ -55,53 +58,43 @@ public class BalanceClickExample implements ClientModInitializer {
         client.player.sendMessage(Text.of("[BalanceClick] Parsed balance: $" + parsedBalance), false);
     }
 
-    private void startBalanceRequestLoop() {
+    private void startRightShiftListener() {
         Thread thread = new Thread(() -> {
-            long deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS;
-
-            while (!balanceRequested && System.currentTimeMillis() < deadline) {
+            while (!Thread.currentThread().isInterrupted()) {
                 MinecraftClient client = MinecraftClient.getInstance();
-                if (client != null && client.player != null && client.player.networkHandler != null) {
-                    triggerBalanceCommand();
-                    return;
+                if (client != null && client.getWindow() != null) {
+                    long windowHandle = client.getWindow().getHandle();
+                    boolean isShiftPressed = GLFW.glfwGetKey(windowHandle, RIGHT_SHIFT_KEY) == GLFW.GLFW_PRESS;
+
+                    if (isShiftPressed && !lastShiftPressed) {
+                        triggerBalanceCommand();
+                    }
+
+                    lastShiftPressed = isShiftPressed;
+                } else {
+                    lastShiftPressed = false;
                 }
 
                 try {
-                    Thread.sleep(250L);
+                    Thread.sleep(50L);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
             }
-
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null && client.player != null && client.player.networkHandler != null) {
-                triggerBalanceCommand();
-            } else {
-                System.out.println("[BalanceClickExample] Mod loaded. Waiting for a player/world so /balance can be sent.");
-            }
-        }, "balanceclick-requester");
+        }, "balanceclick-right-shift");
 
         thread.setDaemon(true);
         thread.start();
     }
 
     private void triggerBalanceCommand() {
-        if (balanceRequested) {
-            return;
-        }
-
-        balanceRequested = true;
-
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.player.networkHandler == null) {
+        if (client == null || client.player == null || client.getNetworkHandler() == null) {
             return;
         }
 
+        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending /balance."), false);
         client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
-        client.player.sendMessage(Text.of("[BalanceClick] Sent /balance to request the current balance."), false);
-
-        String demoResponse = "your balance is $123,456,789";
-        handleBalanceResponse(demoResponse);
     }
 }
