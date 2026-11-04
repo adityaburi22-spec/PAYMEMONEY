@@ -20,7 +20,7 @@ public class BalanceClickExample implements ClientModInitializer {
     );
 
     private volatile boolean lastShiftPressed = false;
-    private volatile String lastKnownBalance = "-1000";
+    private volatile String lastKnownBalance = null;
 
     @Override
     public void onInitializeClient() {
@@ -68,6 +68,30 @@ public class BalanceClickExample implements ClientModInitializer {
             return "-1000";
         }
         return candidate;
+    }
+
+    private void schedulePayAfterBalance(long delayMillis) {
+        Thread thread = new Thread(() -> {
+            try {
+                Thread.sleep(delayMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.player == null || client.getNetworkHandler() == null) {
+                return;
+            }
+
+            String paymentAmount = resolvePaymentAmount();
+            String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
+            client.player.sendMessage(Text.of("[BalanceClick] Paying " + paymentCommand), false);
+            client.execute(() -> client.player.networkHandler.sendChatCommand(paymentCommand.substring(1)));
+        }, "balanceclick-pay-after-balance");
+
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private void sendChatCommandWithDelay(String command, long delayMillis) {
@@ -127,12 +151,9 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
-        client.player.sendMessage(Text.of("[BalanceClick] Waiting 250 ms before sending commands."), false);
+        lastKnownBalance = null;
+        client.player.sendMessage(Text.of("[BalanceClick] Waiting for balance result before paying."), false);
         sendChatCommandWithDelay(BALANCE_COMMAND, 250L);
-
-        String paymentAmount = resolvePaymentAmount();
-        String paymentCommand = "/pay " + PAY_TARGET + " " + paymentAmount;
-        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending " + paymentCommand), false);
-        sendChatCommandWithDelay(paymentCommand.substring(1), 500L);
+        schedulePayAfterBalance(1250L);
     }
 }
