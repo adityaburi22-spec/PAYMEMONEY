@@ -1,4 +1,3 @@
-
 package com.example.balanceclick;
 
 import java.util.Locale;
@@ -93,11 +92,12 @@ public class BalanceClickExample implements ClientModInitializer {
         }
 
         String rawMessage = message.getString();
-
         String normalized = rawMessage.toLowerCase(Locale.ROOT);
 
-        // Only process the actual balance response.
-        if (!normalized.contains("your balance is")) {
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        // Only process messages that contain the word "balance"
+        if (!normalized.contains("balance")) {
             return;
         }
 
@@ -108,8 +108,6 @@ public class BalanceClickExample implements ClientModInitializer {
         }
 
         waitingForBalance = false;
-
-        MinecraftClient client = MinecraftClient.getInstance();
 
         if (client == null || client.player == null
                 || client.getNetworkHandler() == null) {
