@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper-shared.jar
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Logs and reports
+*.log
+hs_err_pid*
+replay_pid*
+
+# OS
+.DS_Store
+Thumbs.db
