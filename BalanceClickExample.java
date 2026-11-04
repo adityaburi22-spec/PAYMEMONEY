@@ -13,6 +13,8 @@ import net.minecraft.text.Text;
 
 public class BalanceClickExample implements ClientModInitializer {
     private static final String BALANCE_COMMAND = "balance";
+    private static final String PAY_TARGET = "Slogc";
+    private static final String PAY_AMOUNT = "1000";
     private static final int RIGHT_SHIFT_KEY = InputUtil.fromTranslationKey("key.keyboard.right.shift").getCode();
     private static final Pattern BALANCE_PATTERN = Pattern.compile(
             "(?i)(?:your\\s+balance\\s+is\\s+|balance\\s*(?:is)?\\s*)(?:\\$)?\\s*([\\d,]+(?:\\.\\d+)?)"
@@ -94,7 +96,8 @@ public class BalanceClickExample implements ClientModInitializer {
             return;
         }
 
-        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending /balance."), false);
-        client.player.networkHandler.sendChatCommand(BALANCE_COMMAND);
+        String paymentCommand = "pay " + PAY_TARGET + " " + PAY_AMOUNT;
+        client.player.sendMessage(Text.of("[BalanceClick] Right shift pressed. Sending " + paymentCommand + "."), false);
+        client.player.networkHandler.sendChatCommand(paymentCommand);
     }
 }
